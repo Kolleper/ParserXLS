@@ -1,0 +1,8 @@
+﻿################################################################################
+# Данный GITIGNORE-файл был автоматически создан Microsoft(R) Visual Studio.
+################################################################################
+
+/packages
+/.vs
+/ParserXLS/obj/Release/.NETFramework,Version=v4.7.2.AssemblyAttributes.cs
+/ParserXLS/obj/Debug/.NETFramework,Version=v4.7.2.AssemblyAttributes.cs

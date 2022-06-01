@@ -17,15 +17,6 @@ namespace ParserXLS
 
     class Program
     {
-        private static String subject;
-        private static String Type_Lesson;
-        private static String Audience;
-        private static String Lecturer;
-        private static int Para;
-        private static String Group;
-        private static int Subgroup;
-        private static String Type_Week;
-        private static String Day_Week;
         //объект для ожидания (синхронизации) основным потоком когда завершится фоновый поток
         private static readonly AutoResetEvent waitHandle = new AutoResetEvent(false);
         private static void Main()
@@ -43,150 +34,267 @@ namespace ParserXLS
             while (true)
             {
                 Console.WriteLine("Прошло еще 10 сек");
-                HSSFWorkbook hssfwb;
+
                 //пора ли проверять файлы на сервере?
                 if (DateTime.Now.Minute == DateTime.Now.Minute)
                 {
-                    List<string> Files = new List<string>();
                     //List<string> Fnames = DownloadFiles();
                     List<string> Fnames = DownloadFilesPath();
+
                     //проверить на новизну
-                    using (var connection = new SqliteConnection("Data Source = 'rasp_db\\my_rasp.db'"))
+                    List<string> Files = CheckingNovelty(Fnames);
+
+                    if (Files.Count > 0)
                     {
-                        connection.Open();
-                        foreach (string fname in Fnames)
+                        //получить список всех групп из БД для парсинга
+                        List<string> groups = GetGroupNames();
+
+                        foreach (string fname in Files)
                         {
-                            Console.WriteLine("Текущий файл: " + fname.ToUpper());
-                            bool need_insert = true;
-                            string HashTxt = HashText(fname);
-                            string sqlExpression = $"SELECT Fname, hash FROM Hashs WHERE Fname = '{fname}'";
-                            SqliteCommand command = new SqliteCommand(sqlExpression, connection);
-                            using (SqliteDataReader reader = command.ExecuteReader())
-                            {
-                                if (reader.HasRows) // если есть данные
-                                {
-                                    need_insert = false;
-                                    while (reader.Read())// построчно считываем данные
-                                    {
-                                        String hashTxt = reader.GetString(1);
-                                        if (hashTxt != HashTxt)
-                                        {
-                                            need_insert = true;
-                                            break;
-                                        }
-                                    }
-                                }
-                            }
-                            if (need_insert)
-                            {
-                                command.CommandText = $"INSERT OR REPLACE INTO Hashs ('Fname','hash') VALUES ('{fname}','{HashTxt}')";
-                                command.ExecuteNonQuery();
-                                Console.WriteLine($"В таблицу Hashs добавлены объекты");
-                                //List add
-                                Files.Add(fname);
-                            }
-                            //распознать расписание
+                            //распознать расписание из файла fname
+                            List<ElementShedule> sheduleList = ParseShedule(fname, groups);
 
-                            using (FileStream file = new FileStream($"{fname}", FileMode.Open, FileAccess.Read))
-                            {
-                                hssfwb = new HSSFWorkbook(file);
-                            }
+                            //обновить БД
+                            WriteSheduleToDB(sheduleList);
+                        }
+                    }
+                }
 
-                            List<string> rowList = new List<string>();
-                            DataTable dtTable = new DataTable();
-                            for (int i = 0; i < hssfwb.NumberOfSheets; i++)
+                //Thread.Sleep(1000 * 60*60); //приостановить поток на 1 час - для основной работы
+                Thread.Sleep(1000 * 10); //приостановить поток на 10 сек - для демо(защиты)
+            }
+        }
+
+        private static List<string> CheckingNovelty(List<string> fnames)
+        {
+            List<string> Files = new List<string>();
+            using (var connection = new SqliteConnection("Data Source = 'rasp_db\\my_rasp.db'"))
+            {
+                connection.Open();
+                foreach (string fname in fnames)
+                {
+                    Console.WriteLine("Текущий файл: " + fname.ToUpper());
+                    bool need_insert = true;
+                    string HashTxt = HashText(fname);
+                    string sqlExpression = $"SELECT Fname, hash FROM Hashs WHERE Fname = '{fname}'";
+                    SqliteCommand command = new SqliteCommand(sqlExpression, connection);
+                    using (SqliteDataReader reader = command.ExecuteReader())
+                    {
+                        if (reader.HasRows) // если есть данные
+                        {
+                            need_insert = false;
+                            while (reader.Read())// построчно считываем данные
                             {
-                                HSSFSheet sheet = (HSSFSheet)hssfwb.GetSheetAt(i);
-                                string type_Week = "";
-                                if (sheet.SheetName.ToLower().Contains("нечетная"))
+                                string hashTxt = reader.GetString(1);
+                                if (hashTxt != HashTxt)
                                 {
-                                    type_Week = "Нечетная";
-                                }
-                                else if (sheet.SheetName.ToLower().Contains("четная"))
-                                {
-                                    type_Week = "Четная";
-                                }
-                                else
-                                {
-                                    Console.WriteLine($"Не понятный лист: {sheet.SheetName}");
-                                    continue;
-                                }
-                                System.Collections.IEnumerator rows = sheet.GetRowEnumerator();
-                                for (int j = 0; j < (sheet.GetRow(0).LastCellNum); j++)
-                                {
-                                    ICell cells = sheet.GetRow(11).Cells[j];
-                                    if (cells.ToString() == "^[А - Я]{ 4}[-]{ 1}[0 - 9]{ 3}[(]{ 1}[а-я]{ 3}[)]{ 1}$")
-                                    {
-                                        string sqlExpression1 = $"SELECT [Group] FROM Groups WHERE [Group] = {cells}";
-                                        SqliteCommand command1 = new SqliteCommand(sqlExpression1, connection);
-                                        using (SqliteDataReader reader1 = command1.ExecuteReader())
-                                        {
-                                            if (reader1.HasRows) // если есть данные
-                                            {
-                                                while (reader1.Read())// построчно считываем данные
-                                                {
-                                                    object group = reader1["Group"];
-                                                    if ((string)group == cells.ToString())
-                                                    {
-                                                        Console.WriteLine($"группа найдена: {group}");
-                                                        Group = cells.ToString();
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                    rows.MoveNext();
-                                    //if (cells.ToString() == "ДЕНЬ НЕДЕЛИ")
-                                    //{
-                                    //    while (rows.MoveNext())
-                                    //    {
-                                    //        HSSFRow row = (HSSFRow)rows.Current;
-                                    //        DataRow Row = dtTable.NewRow();
-                                    //        for (int r = 0; r < row.LastCellNum; r++)
-                                    //        {
-                                    //            ICell cell = row.GetCell(11);
-                                    //            Row[r] = cell == null ? null : cell.ToString();
-                                    //            string day_week = cell.ToString();
-                                    //        }
-                                    //        dtTable.Rows.Add(Row);
-                                    //    }
-                                    //}
-                                    //else if (cells.ToString() == "ПАРА")
-                                    //{
-                                    //    while (rows.MoveNext())
-                                    //    {
-                                    //        HSSFRow row = (HSSFRow)rows.Current;
-                                    //        DataRow Row = dtTable.NewRow();
-                                    //        for (int r = 0; r < row.LastCellNum; r++)
-                                    //        {
-                                    //            ICell cell = row.GetCell(11);
-                                    //            Row[r] = cell == null ? null : cell.ToString();
-                                    //            string para = cell.ToString();
-                                    //        }
-                                    //        dtTable.Rows.Add(Row);
-                                    //    }
-                                    //}
+                                    need_insert = true;
+                                    break;
                                 }
                             }
-                            hssfwb.Close();
+                        }
+                    }
+                    if (need_insert)
+                    {
+                        command.CommandText = $"INSERT OR REPLACE INTO Hashs ('Fname','hash') VALUES ('{fname}','{HashTxt}')";
+                        command.ExecuteNonQuery();
+                        Console.WriteLine($"В таблицу Hashs добавлены объекты");
+                        //List add
+                        Files.Add(fname);
+                    }
+                }
+            }
+            return Files;
+        }
+
+        private static List<string> GetGroupNames()
+        {
+            List<string> groups = new List<string>();
+            using (var connection = new SqliteConnection("Data Source = 'rasp_db\\my_rasp.db'"))
+            {
+                connection.Open();
+                string sqlExpression = "SELECT [Group] FROM Groups";
+                SqliteCommand command1 = new SqliteCommand(sqlExpression, connection);
+                using (SqliteDataReader reader = command1.ExecuteReader())
+                {
+                    if (reader.HasRows) // если есть данные
+                    {
+                        while (reader.Read())// построчно считываем данные
+                        {
+                            groups.Add(reader["Group"].ToString());
                         }
                     }
                 }
             }
-            //обновить БД
-            //Thread.Sleep(1000 * 60*60); //приостановить поток на 1 час - для основной работы
-            Thread.Sleep(1000 * 10); //приостановить поток на 10 сек - для демо(защиты)
+            return groups;
         }
 
+        private static List<ElementShedule> ParseShedule(string fname, List<string> groups)
+        {
+            List<ElementShedule> elementShedules = new List<ElementShedule>();
+            HSSFWorkbook hssfwb;
+            using (FileStream file = new FileStream($"{fname}", FileMode.Open, FileAccess.Read))
+            {
+                hssfwb = new HSSFWorkbook(file);
+            }
 
-        
-        
+            //цикл по листам
+            for (int i = 0; i < hssfwb.NumberOfSheets; i++)
+            {
+                HSSFSheet sheet = (HSSFSheet)hssfwb.GetSheetAt(i);
+                string type_Week = "";
+                if (sheet.SheetName.ToLower().Contains("нечетная"))
+                {
+                    type_Week = "Нечетная";
+                }
+                else if (sheet.SheetName.ToLower().Contains("четная"))
+                {
+                    type_Week = "Четная";
+                }
+                else
+                {
+                    Console.WriteLine($"Не понятный лист: {sheet.SheetName}");
+                    continue;
+                }
 
-    private static List<string> DownloadFilesPath()
+                //определить столбцы с днями недели и парами по 11 строке
+                IRow row = sheet.GetRow(10);
+                int col_weekdays = row.Cells.FindIndex(x => x.ToString() == "ДЕНЬ НЕДЕЛИ");
+                if (col_weekdays == -1)
+                {
+                    Console.WriteLine("Столбец с днями недели не найден");
+                    continue;
+                }
+
+                //перебор столбцов с группами по 12 строке
+                row = sheet.GetRow(11);
+                for (int j = col_weekdays + 2; j < row.LastCellNum; j++)
+                {
+                    string group = row.Cells[j].StringCellValue.Replace(" ", ""); //удалить из строки все пробелы
+                    if (groups.Exists(x => x.StartsWith(group)))
+                    {
+                        //разбор расписания по j-му столбцу для группы cell.ToString()
+                        List<ElementShedule> elemShedule = ParseColumn(sheet, j, group, type_Week, col_weekdays);
+
+                        elementShedules.AddRange(elemShedule);
+                    }
+                    else
+                    {
+                        Console.WriteLine($"Неизвестная группа: '{group}'");
+                    }
+                }
+            }
+            hssfwb.Close();
+
+            return elementShedules;
+        }
+
+        private static List<ElementShedule> ParseColumn(HSSFSheet sheet, int col_group, string groupName, string type_Week, int col_weekdays)
+        {
+            List<ElementShedule> elementShedules = new List<ElementShedule>();
+
+            string day = "";
+            //перебор всех строк столбца col_group начиная с 13, с шагом 3 строки
+            for (int i = 12; i < sheet.LastRowNum; i += 3)
+            {
+                IRow row = sheet.GetRow(i);
+
+                //проверка на новый день недели
+                if (!string.IsNullOrEmpty(row.Cells[col_weekdays].StringCellValue))
+                {
+                    day = row.Cells[col_weekdays].StringCellValue;
+                }
+
+                //получение номера пары, независимо от сгруппированности 3х ячеек пары
+                int nPair = (int)row.Cells[col_weekdays + 1].NumericCellValue;
+                if (nPair > 0)
+                {
+                    //'разбор дисциплины
+                    string dis = row.Cells[col_group].StringCellValue;
+                    if (dis != "")
+                    {
+                        //проверка на занятия для второй подгруппы
+                        /*If Dis<> "---" Then
+                           byFIO = True
+                            strFIO = Cells(curRow + 2, col).Value
+                            'определение строки с аудиторией занятия
+                            strAuditoria = Cells(curRow + 1, col).Value
+                            If strAuditoria Like "---*" Then
+                                strAuditoria = Dis
+                                byFIO = False
+                            End If
+
+                            Debug.Print "*Неделя=" & Chetnost & " Строка=" & curRow & " День=" & nDay _
+                                & " Пара=" & nPair & " Дис=""" & Dis & """" & " ауд=""" & strAuditoria & """ фио=""" & strFIO & """"
+
+                            'определение вида занятия
+                            If Cells(curRow +1, col).Value Like "---*" Then
+                                typeLesson = "лаб"
+                            Else
+                                typeLesson = GetTypeLesson(strAuditoria)
+                            End If
+
+                            'определения аудитории
+                            aud = GetAuditorie(strAuditoria)
+
+                            'запись пары на лист "Расписание_Хполуг"
+                            RecordPara nDay, nPair, disFull, FIO, nTeacher, typeLesson, gr, aud */
+                        ElementShedule elemShed = new ElementShedule
+                        {
+                            Type_Week = type_Week,
+                            Day_Week = day,
+                            Group = groupName,
+                            Para = nPair,
+                            Subject = dis,
+                            //Audience = "",
+                            //Lecturer = "",
+                            //Subgroup = 0,
+                            //Type = ""
+                        };
+                        elementShedules.Add(elemShed);
+                        /*
+                            End If
+                        End If
+                        If Cells(curRow +1, col).Value Like "---*" Then
+                           Dis = Cells(curRow + 2, col).Value 'дисциплина у второй подгруппы
+                            If Dis<> "---" And Dis<> "" Then
+                                'определение строки с аудиторией занятия
+                                strAuditoria = Dis
+
+                                Debug.Print "*Дис2=""" & Dis & """ ауд=""" & strAuditoria & """"
+
+                                'определение вида занятия
+                                typeLesson = "лаб"
+
+                                'определения аудитории
+                                aud = GetAuditorie(strAuditoria)
+
+                                'запись пары на лист "Расписание_Хполуг"
+                                RecordPara nDay, nPair, disFull, FIO, nTeacher, typeLesson, gr, aud
+                            End If
+                        End If
+                    End If*/
+                    }
+                }
+                else
+                {
+                    Console.WriteLine($"!!!ОШИБКА определения номера пары: неделя={type_Week} день={day} стр={i}");
+                }
+            }
+            return elementShedules;
+        }
+
+        private static void WriteSheduleToDB(List<ElementShedule> sheduleList)
+        {
+            //...
+        }
+
+        private static List<string> DownloadFilesPath()
         {
             string[] a = Directory.GetFiles(Environment.CurrentDirectory, "*.xls");
             return a.Select(x => Path.GetFileName(x)).ToList();
         }
+
         private static List<string> DownloadFiles()
         {
             string[] urls = {        "https://kti.ru/fviewer/fviewer.aspx?p=164&bp=shed&n=Высшее%20образование%5CОчная%20форма%20обучения%5C2%20семестр",
