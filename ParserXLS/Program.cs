@@ -82,7 +82,8 @@ namespace ParserXLS
                     {
                         if (reader.HasRows) // если есть данные
                         {
-                            need_insert = false;
+                            //need_insert = false;
+                            need_insert = true;
                             while (reader.Read())// построчно считываем данные
                             {
                                 string hashTxt = reader.GetString(1);
@@ -171,6 +172,7 @@ namespace ParserXLS
                 for (int j = col_weekdays + 2; j < row.LastCellNum; j++)
                 {
                     string group = row.Cells[j].StringCellValue.Replace(" ", ""); //удалить из строки все пробелы
+                    group = group.EndsWith("(9 кл)") ? group.Substring(group.Length - 6, 6) : group;
                     if (groups.Exists(x => x.StartsWith(group)))
                     {
                         //разбор расписания по j-му столбцу для группы cell.ToString()
@@ -288,43 +290,49 @@ namespace ParserXLS
         {
             //...
         }
-
+        //заглушка для проверки файлов
         private static List<string> DownloadFilesPath()
         {
             string[] a = Directory.GetFiles(Environment.CurrentDirectory, "*.xls");
             return a.Select(x => Path.GetFileName(x)).ToList();
         }
-
+        //основной метод для скачивания
         private static List<string> DownloadFiles()
         {
-            string[] urls = {        "https://kti.ru/fviewer/fviewer.aspx?p=164&bp=shed&n=Высшее%20образование%5CОчная%20форма%20обучения%5C2%20семестр",
-                                     "https://kti.ru/fviewer/fviewer.aspx?p=164&bp=shed&n=Среднее%20профессиональное%20образование%5CОчная%20форма%20обучения%5CРАСПИСАНИЕ%202%20семестр%5CРасписание%5CРасписание%20КИС",
-                                     "https://kti.ru/fviewer/fviewer.aspx?p=164&bp=shed&n=Среднее%20профессиональное%20образование%5CОчная%20форма%20обучения%5CРАСПИСАНИЕ%202%20семестр%5CРасписание%5CРасписание%201%20курс%209%20кл",
-                                     "https://kti.ru/fviewer/fviewer.aspx?p=164&bp=shed&n=Среднее%20профессиональное%20образование%5CОчная%20форма%20обучения%5CРАСПИСАНИЕ%202%20семестр%5CРасписание%5CРасписание%20КТМС",
-                                     "https://kti.ru/fviewer/fviewer.aspx?p=164&bp=shed&n=Среднее%20профессиональное%20образование%5CОчная%20форма%20обучения%5CРАСПИСАНИЕ%202%20семестр%5CРасписание%5CРасписание%20КТС%20и%20КЭС",
-                                     "https://kti.ru/fviewer/fviewer.aspx?p=164&bp=shed&n=Среднее%20профессиональное%20образование%5CОчная%20форма%20обучения%5CРАСПИСАНИЕ%202%20семестр%5CРасписание%5CРасписание%20КЭЛС"
-                                    };
-            List<string> urls1 = new List<string>();
-            for (int i = 0; i < urls.Length; i++)
+            string[] htmlUrls = {"https://kti.ru/fviewer/fviewer.aspx?p=164&bp=shed&n=Высшее%20образование%5CОчная%20форма%20обучения%5C2%20семестр",
+                                 "https://kti.ru/fviewer/fviewer.aspx?p=164&bp=shed&n=Среднее%20профессиональное%20образование%5CОчная%20форма%20обучения%5CРАСПИСАНИЕ%202%20семестр%5CРасписание%5CРасписание%20КИС",
+                                 "https://kti.ru/fviewer/fviewer.aspx?p=164&bp=shed&n=Среднее%20профессиональное%20образование%5CОчная%20форма%20обучения%5CРАСПИСАНИЕ%202%20семестр%5CРасписание%5CРасписание%201%20курс%209%20кл",
+                                 "https://kti.ru/fviewer/fviewer.aspx?p=164&bp=shed&n=Среднее%20профессиональное%20образование%5CОчная%20форма%20обучения%5CРАСПИСАНИЕ%202%20семестр%5CРасписание%5CРасписание%20КТМС",
+                                 "https://kti.ru/fviewer/fviewer.aspx?p=164&bp=shed&n=Среднее%20профессиональное%20образование%5CОчная%20форма%20обучения%5CРАСПИСАНИЕ%202%20семестр%5CРасписание%5CРасписание%20КТС%20и%20КЭС",
+                                 "https://kti.ru/fviewer/fviewer.aspx?p=164&bp=shed&n=Среднее%20профессиональное%20образование%5CОчная%20форма%20обучения%5CРАСПИСАНИЕ%202%20семестр%5CРасписание%5CРасписание%20КЭЛС"
+                                };
+            //списк html-ссылок
+            List<string> htmlLinks = new List<string>();
+            //цикл для перебора ссылок из массива для преобразования их в одну строчку
+            for (int i = 0; i < htmlUrls.Length; i++)
             {
-                string text = urls[i];
-                urls1.Add(gethtmlcode(text));
+                string text = htmlUrls[i];
+                //добавление в список переформатированных страниц в html-коде
+                htmlLinks.Add(gethtmlcode(text));
             }
-
+            //список имён файлов
             List<string> Names = new List<string>();
-            for (int i = 0; i < urls1.Count; i++)
+            //перебор html страниц для поиска нужных ссылок и загрузки по имени
+            for (int i = 0; i < htmlLinks.Count; i++)
             {
                 string fname;
-                List<LinkItem> links = LinkFinder.Find(urls1[i]);
+                //список ссылок найденных в содержимом страницах html-кода 
+                List<LinkItem> links = LinkFinder.Find(htmlLinks[i]);
                 foreach (LinkItem k in links)
                 {
                     string text1 = Convert.ToString(k);
                     Console.WriteLine(text1);
+                    //получение имени файла и скачивание
                     fname = getfile("https://kti.ru/fviewer/" + k.Href);
+                    //добавление имени файла в список
                     Names.Add(fname);
                 }
             }
-
             return Names;
         }
         static string HashText(string fname)
@@ -399,4 +407,3 @@ namespace ParserXLS
         }
     }
 }
-
