@@ -6,3 +6,5 @@
 /.vs
 /ParserXLS/obj/Release/.NETFramework,Version=v4.7.2.AssemblyAttributes.cs
 /ParserXLS/obj/Debug/.NETFramework,Version=v4.7.2.AssemblyAttributes.cs
+/ParserXLS/bin/Debug
+/System.Data.SQLite.Core.MSIL.1.0.110.0.nupkg
