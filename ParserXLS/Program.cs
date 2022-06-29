@@ -11,6 +11,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
+using static ParserXLS.SQLiteWorker;
 
 namespace ParserXLS
 {
@@ -23,7 +24,6 @@ namespace ParserXLS
             //настроить фоновый вычислительный поток - задать метод для выполнения в потоке
             Thread t = new Thread(new ThreadStart(myMainMethod));
             t.Start(); //запустить фоновый поток
-
             waitHandle.WaitOne(); //Приостановить основной поток (метод Main), пока не поступит разрешение продолжить
                                   //(а оно никогда не поступит, т.к. это аналог бесконечного цикла)
         }
@@ -33,34 +33,30 @@ namespace ParserXLS
             while (true)
             {
                 Console.WriteLine("Прошло еще 10 сек");
-
                 //пора ли проверять файлы на сервере?
                 if (DateTime.Now.Minute == DateTime.Now.Minute)
                 {
                     //List<string> Fnames = DownloadFiles();
                     List<string> Fnames = DownloadFilesPath();
-
                     //проверить на новизну
                     List<string> Files = CheckingNovelty(Fnames);
-
                     if (Files.Count > 0)
                     {
                         //получить список всех групп из БД для парсинга
                         List<Groups> groups = GetGroupNames();
-
+                        List<Day_Week> days = GetDay_Weeks();
+                        List<Type_Week> weeks = GetType_Weeks();
                         foreach (string fname in Files)
                         {
                             //распознать расписание из файла fname
-                            List<ElementShedule> sheduleList = ParseShedule(fname, groups);
-
+                            List<ElementShedule> sheduleList = ParseShedule(fname, groups, weeks);
                             //обновить БД
                             WriteSheduleToDB(sheduleList);
                         }
                     }
                 }
-
-                //Thread.Sleep(1000 * 60*60); //приостановить поток на 1 час - для основной работы
-                Thread.Sleep(1000 * 10); //приостановить поток на 10 сек - для демо(защиты)
+                Thread.Sleep(1000 * 60 * 60); //приостановить поток на 1 час - для основной работы
+                //Thread.Sleep(1000 * 10); //приостановить поток на 10 сек - для демо(защиты)
             }
         }
         private static List<string> CheckingNovelty(List<string> fnames)
@@ -104,19 +100,25 @@ namespace ParserXLS
         }
         private static List<Groups> GetGroupNames()
         {
-            //List<GroupDB> groups = new List<GroupDB>();
-            List<Groups> listGroup = SQLiteWorker.DBGroupSelect(out string errMsg);
-            if (string.IsNullOrEmpty(errMsg)) // если есть данные
-            {
-                //foreach (Groups g in listGroup)
-                //{
-                    //Groups group = new Groups { name = g.Group.ToString(), code = int.Parse(g.id_Group.ToString()) };
-                    //listGroup.Add(g);
-                //}
-            }
+            List<Groups> listGroup = DBGroupSelect(out string errMsg);
             return listGroup;
         }
-        private static List<ElementShedule> ParseShedule(string fname, List<Groups> groups)
+        private static List<Day_Week> GetDay_Weeks()
+        {
+            List<Day_Week> listDays = DBDaySelect(out string errMsg);
+            return listDays;
+        }
+        private static List<Type_Week> GetType_Weeks()
+        {
+            List<Type_Week> listWeek = DBWeekSelect(out string errMsg);
+            return listWeek;
+        }
+        private static List<Type_Lesson> GetType_Lesson()
+        {
+            List<Type_Lesson> listLesson = DBLessonSelect(out string errMsg);
+            return listLesson;
+        }
+        private static List<ElementShedule> ParseShedule(string fname, List<Groups> groups, List<Type_Week> weeks)
         {
             List<ElementShedule> elementShedules = new List<ElementShedule>();
             HSSFWorkbook hssfwb;
@@ -124,19 +126,20 @@ namespace ParserXLS
             {
                 hssfwb = new HSSFWorkbook(file);
             }
-
+            Console.WriteLine("################# Текущий файл: " + fname.ToUpper() + " #################");
             //цикл по листам
             for (int i = 0; i < hssfwb.NumberOfSheets; i++)
             {
                 HSSFSheet sheet = (HSSFSheet)hssfwb.GetSheetAt(i);
                 string type_Week = "";
+
                 if (sheet.SheetName.ToLower().Contains("нечетная"))
                 {
-                    type_Week = "Нечетная";
+                    type_Week = "НЕЧЕТНАЯ";
                 }
                 else if (sheet.SheetName.ToLower().Contains("четная"))
                 {
-                    type_Week = "Четная";
+                    type_Week = "ЧЕТНАЯ";
                 }
                 else
                 {
@@ -155,11 +158,12 @@ namespace ParserXLS
 
                 //перебор столбцов с группами по 12 строке
                 row = sheet.GetRow(11);
-                try
+
+                for (int j = col_weekdays + 2; j < row.Cells.Count; j++)
                 {
-                    for (int j = col_weekdays + 2; j < row.LastCellNum; j++)
+                    string group = row.Cells[j].StringCellValue.Replace(" ", ""); //удалить из строки все пробелы
+                    if (!string.IsNullOrEmpty(group))
                     {
-                        string group = row.Cells[j].StringCellValue.Replace(" ", ""); //удалить из строки все пробелы
                         group = group.EndsWith("(9 кл)") ? group.Substring(group.Length - 6, 6) : group;
                         Groups g = groups.Find(x => x.Group.StartsWith(group));
                         if (g != null)
@@ -174,10 +178,6 @@ namespace ParserXLS
                             Console.WriteLine($"Неизвестная группа: '{group}'");
                         }
                     }
-                }
-                catch (ArgumentOutOfRangeException e)
-                {
-                    Console.WriteLine(e.Message);
                 }
             }
             hssfwb.Close();
@@ -205,13 +205,25 @@ namespace ParserXLS
                 if (nPair > 0)
                 {
                     //разбор дисциплины
-                    string dis = sheet.GetRow(i).Cells[col_group].StringCellValue.Trim();
+                    if (col_group >= row.Cells.Count)
+                    {
+                        continue;
+                    }
+                    string dis = row.Cells[col_group].StringCellValue.Trim();
+                    if (col_group >= sheet.GetRow(i + 1).Cells.Count)
+                    {
+                        continue;
+                    }
                     string strAuditoria = sheet.GetRow(i + 1).Cells[col_group].StringCellValue;
-                    if (!String.IsNullOrEmpty(strAuditoria))//проверка на НЕ пустую ячейку(2)
+                    if (!string.IsNullOrEmpty(strAuditoria))//проверка на НЕ пустую ячейку(2)
                     {
                         string typeLesson = "";
                         string aud = "";
                         int sub = 0;
+                        if (col_group >= sheet.GetRow(i + 2).Cells.Count)
+                        {
+                            continue;
+                        }
                         string FIO = sheet.GetRow(i + 2).Cells[col_group].StringCellValue;
                         typeLesson = GetTypeLesson(strAuditoria);
                         aud = GetAuditorie(strAuditoria);
@@ -230,7 +242,7 @@ namespace ParserXLS
                             {
                                 string pervaya = dis;
                                 while (pervaya.Contains("  ")) { pervaya = pervaya.Replace("  ", " "); }
-                                String[] words = pervaya.Split(new char[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
+                                string[] words = pervaya.Split(new char[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
                                 if (words.Length > 0)
                                 {
                                     elementShedules.Add(new ElementShedule
@@ -285,7 +297,8 @@ namespace ParserXLS
                 }
                 else
                 {
-                    Console.WriteLine($"!!!ОШИБКА определения номера пары: неделя={type_Week} день={day} стр={i}");
+                    Console.WriteLine($"!!!ОШИБКА определения номера пары: неделя={type_Week} день={day} стр={i} группа = {group.Group}");
+                    break;
                 }
             }
             return elementShedules;
@@ -316,7 +329,7 @@ namespace ParserXLS
             //запрос на добавление списка всех элементов
             string codes = string.Join(",", sheduleList.Distinct().Select(x => x.Code_Group));
             SQLiteWorker.DBScheduleDelete(codes, out string errMsg);//Удаление пар по коду группе
-            SQLiteWorker.DBScheduleInsert(sheduleList, out errMsg);//Вставка пар
+            SQLiteWorker.DBScheduleWrite(sheduleList, out errMsg);//Вставка пар
         }
         //заглушка для проверки файлов
         private static List<string> DownloadFilesPath()
@@ -327,7 +340,6 @@ namespace ParserXLS
         //основной метод для скачивания
         private static List<string> DownloadFiles()
         {
-            DateTime currentDate = DateTime.Now;
             //массив для 2 семестра
             string[] sem_2 = {"https://kti.ru/fviewer/fviewer.aspx?p=164&bp=shed&n=Высшее%20образование%5CОчная%20форма%20обучения%5C2%20семестр",
                                 "https://kti.ru/fviewer/fviewer.aspx?p=164&bp=shed&n=Среднее%20профессиональное%20образование%5CОчная%20форма%20обучения%5CРАСПИСАНИЕ%202%20семестр%5CРасписание%5CРасписание%20КИС",
@@ -346,7 +358,7 @@ namespace ParserXLS
             {
                 string text = sem_2[i];
                 //добавление в список переформатированных страниц в html-коде
-                htmlLinks.Add(gethtmlcode(text));
+                htmlLinks.Add(Gethtmlcode(text));
             }
             //список имён файлов
             List<string> Names = new List<string>();
@@ -361,7 +373,7 @@ namespace ParserXLS
                     string text1 = Convert.ToString(k);
                     Console.WriteLine(text1);
                     //получение имени файла и скачивание
-                    fname = getfile("https://kti.ru/fviewer/" + k.Href);
+                    fname = Getfile("https://kti.ru/fviewer/" + k.Href);
                     //добавление имени файла в список
                     Names.Add(fname);
                 }
@@ -389,7 +401,7 @@ namespace ParserXLS
                 result.Append(bytes[i].ToString("x2"));
             return result.ToString();
         }
-        static string gethtmlcode(string url)
+        static string Gethtmlcode(string url)
         {
             using (WebClient client = new WebClient())
             {
@@ -398,7 +410,7 @@ namespace ParserXLS
                 return htmlCode;
             }
         }
-        static string getfile(string url)
+        static string Getfile(string url)
         {
             int pos = url.LastIndexOf('\\');
             string fname = url.Substring(pos + 1, url.Length - pos - 1);
