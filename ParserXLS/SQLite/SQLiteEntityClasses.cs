@@ -15,20 +15,20 @@ namespace ParserXLS.SQLite
         public string hash{ get; set; }
     }
 
-    public class Audience
-    {
-        [PrimaryKey]
-        public int AID { get; set; }
-        public string Aud { get; set; }
-    }
-
     public class Day_Week
     {
         [PrimaryKey]
         public int DWID { get; set; }
         public string Day { get; set; }
     }
-
+    
+    public class Audience
+    {
+        [PrimaryKey]
+        public int AID { get; set; }
+        public string Aud { get; set; }
+    }
+    
     public class Lecturer
     {
         [PrimaryKey]
@@ -39,7 +39,7 @@ namespace ParserXLS.SQLite
     public class Subject
     {
         [PrimaryKey]
-        public int LID { get; set; }
+        public int SID { get; set; }
         public string Subject_Full { get; set; }
         public string Subject_Less { get; set; }
     }

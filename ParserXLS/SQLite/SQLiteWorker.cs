@@ -9,9 +9,6 @@ namespace ParserXLS
     class SQLiteWorker
     {
         private static string _DBFILE = "rasp_db\\my_rasp.db";
-
-        /* функции работы с БД */
-        //создать если нет БД 
         internal static bool DBHashOpenOrCreate(out string errMsg)
         {
             errMsg = "";
@@ -61,70 +58,6 @@ namespace ParserXLS
             }
             return list;
         }
-        internal static List<Day_Week> DBDaySelect(out string errMsg)
-        {
-            List<Day_Week> list = null;
-            errMsg = "";
-            if (!File.Exists(_DBFILE)) //проверка на наличие БД
-                return list;
-            try
-            {
-                using (SQLiteConnection connect = new SQLiteConnection(_DBFILE, true))
-                {
-                    //SELECT Day FROM Day_Week
-                    list = connect.Query<Day_Week>("SELECT * FROM Day_Week");
-                }
-            }
-            catch (Exception exc)
-            {
-                errMsg = exc.Message;
-            }
-            return list;
-        }
-        internal static List<Type_Week> DBWeekSelect(out string errMsg)
-        {
-            List<Type_Week> list = null;
-            errMsg = "";
-            if (!File.Exists(_DBFILE)) //проверка на наличие БД
-                return list;
-            try
-            {
-                using (SQLiteConnection connect = new SQLiteConnection(_DBFILE, true))
-                {
-                    //SELECT TWID,
-                        //TypeWeek
-                        //FROM Type_Week;
-                    list = connect.Query<Type_Week>("SELECT * FROM Type_Week");
-                }
-            }
-            catch (Exception exc)
-            {
-                errMsg = exc.Message;
-            }
-            return list;
-        }
-        internal static List<Type_Lesson> DBLessonSelect(out string errMsg)
-        {
-            List<Type_Lesson> list = null;
-            errMsg = "";
-            if (!File.Exists(_DBFILE)) //проверка на наличие БД
-                return list;
-            try
-            {
-                using (SQLiteConnection connect = new SQLiteConnection(_DBFILE, true))
-                {
-                    //SELECT TID,
-                        //TypeLesson
-                        //FROM Type_Lesson;
-                    list = connect.Query<Type_Lesson>("SELECT * FROM Type_Lesson");
-                }
-            }
-            catch (Exception exc)
-            {
-                errMsg = exc.Message;
-            }
-            return list;
-        }
         internal static List<Groups> DBGroupSelect(out string errMsg)
         {
             List<Groups> list = null;
@@ -137,6 +70,73 @@ namespace ParserXLS
                 {
                     //SELECT [Group] FROM Groups
                     list = connect.Query<Groups>("SELECT * FROM Groups");
+                }
+            }
+            catch (Exception exc)
+            {
+                errMsg = exc.Message;
+            }
+            return list;
+        }
+        internal static List<Audience> DBAudSelect(out string errMsg)
+        {
+            List<Audience> list = null;
+            errMsg = "";
+            if (!File.Exists(_DBFILE)) //проверка на наличие БД
+                return list;
+            try
+            {
+                using (SQLiteConnection connect = new SQLiteConnection(_DBFILE, true))
+                {
+                    //SELECT AID,
+                    //Audience
+                    //FROM Audience;
+                    list = connect.Query<Audience>("SELECT * FROM Audience");
+                }
+            }
+            catch (Exception exc)
+            {
+                errMsg = exc.Message;
+            }
+            return list;
+        }
+        internal static List<Lecturer> DBLectorSelect(out string errMsg)
+        {
+            List<Lecturer> list = null;
+            errMsg = "";
+            if (!File.Exists(_DBFILE)) //проверка на наличие БД
+                return list;
+            try
+            {
+                using (SQLiteConnection connect = new SQLiteConnection(_DBFILE, true))
+                {
+                    //SELECT LID,
+                    //Name_Lector
+                    //FROM Lecturer;
+                    list = connect.Query<Lecturer>("SELECT * FROM Lecturer");
+                }
+            }
+            catch (Exception exc)
+            {
+                errMsg = exc.Message;
+            }
+            return list;
+        }
+        internal static List<Subject> DBSubjectSelect(out string errMsg)
+        {
+            List<Subject> list = null;
+            errMsg = "";
+            if (!File.Exists(_DBFILE)) //проверка на наличие БД
+                return list;
+            try
+            {
+                using (SQLiteConnection connect = new SQLiteConnection(_DBFILE, true))
+                {
+                    //SELECT SID,
+                    //Subject_Full,
+                    //Subject_Less
+                    //FROM Subject;
+                    list = connect.Query<Subject>("SELECT * FROM Subject");
                 }
             }
             catch (Exception exc)

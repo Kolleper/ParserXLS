@@ -1,5 +1,6 @@
 ﻿using NPOI.HSSF.UserModel;
 using NPOI.SS.UserModel;
+using NPOI.SS.Util;
 using ParserXLS.SQLite;
 using System;
 using System.Collections.Generic;
@@ -44,12 +45,10 @@ namespace ParserXLS
                     {
                         //получить список всех групп из БД для парсинга
                         List<Groups> groups = GetGroupNames();
-                        List<Day_Week> days = GetDay_Weeks();
-                        List<Type_Week> weeks = GetType_Weeks();
                         foreach (string fname in Files)
                         {
                             //распознать расписание из файла fname
-                            List<ElementShedule> sheduleList = ParseShedule(fname, groups, weeks);
+                            List<ElementShedule> sheduleList = ParseShedule(fname, groups);
                             //обновить БД
                             WriteSheduleToDB(sheduleList);
                         }
@@ -103,22 +102,22 @@ namespace ParserXLS
             List<Groups> listGroup = DBGroupSelect(out string errMsg);
             return listGroup;
         }
-        private static List<Day_Week> GetDay_Weeks()
+        private static List<Audience> GetAudienceNames()
         {
-            List<Day_Week> listDays = DBDaySelect(out string errMsg);
-            return listDays;
+            List<Audience> listAud = DBAudSelect(out string errMsg);
+            return listAud;
         }
-        private static List<Type_Week> GetType_Weeks()
+        private static List<Lecturer> GetLecturerNames()
         {
-            List<Type_Week> listWeek = DBWeekSelect(out string errMsg);
-            return listWeek;
+            List<Lecturer> listLector = DBLectorSelect(out string errMsg);
+            return listLector;
         }
-        private static List<Type_Lesson> GetType_Lesson()
+        private static List<Subject> GetSubjectNames()
         {
-            List<Type_Lesson> listLesson = DBLessonSelect(out string errMsg);
-            return listLesson;
+            List<Subject> listSubject = DBSubjectSelect(out string errMsg);
+            return listSubject;
         }
-        private static List<ElementShedule> ParseShedule(string fname, List<Groups> groups, List<Type_Week> weeks)
+        private static List<ElementShedule> ParseShedule(string fname, List<Groups> groups)
         {
             List<ElementShedule> elementShedules = new List<ElementShedule>();
             HSSFWorkbook hssfwb;
@@ -147,16 +146,11 @@ namespace ParserXLS
                     continue;
                 }
 
-                //определить столбцы с днями недели и парами по 11 строке
-                IRow row = sheet.GetRow(10);
-                int col_weekdays = row.Cells.FindIndex(x => x.ToString() == "ДЕНЬ НЕДЕЛИ");
-                if (col_weekdays == -1)
-                {
-                    Console.WriteLine("Столбец с днями недели не найден");
-                    continue;
-                }
-
+                int col_weekdays = day_week(sheet);
                 //перебор столбцов с группами по 12 строке
+                ///!!!!!!!!!!!!!!!!!!!
+                IRow row = sheet.GetRow(10);
+                ///!!!!!!!!!!!!!!!!!!!
                 row = sheet.GetRow(11);
 
                 for (int j = col_weekdays + 2; j < row.Cells.Count; j++)
@@ -187,7 +181,6 @@ namespace ParserXLS
         private static List<ElementShedule> ParseColumn(HSSFSheet sheet, int col_group, Groups group, string type_Week, int col_weekdays)
         {
             List<ElementShedule> elementShedules = new List<ElementShedule>();
-
             string day = "";
             //перебор всех строк столбца col_group начиная с 13, с шагом !!3!! строки
             for (int i = 12; i < sheet.LastRowNum; i += 3)
@@ -195,13 +188,13 @@ namespace ParserXLS
                 IRow row = sheet.GetRow(i);
 
                 //проверка на новый день недели
-                if (!string.IsNullOrEmpty(row.Cells[col_weekdays].StringCellValue))
+                if (!string.IsNullOrEmpty(Convert.ToString(GetCellValue(row.Cells[col_weekdays]))))
                 {
-                    day = row.Cells[col_weekdays].StringCellValue;
+                    day = Convert.ToString(GetCellValue(row.Cells[col_weekdays]));
                 }
 
                 //получение номера пары, независимо от сгруппированности 3х ячеек пары
-                int nPair = (int)row.Cells[col_weekdays + 1].NumericCellValue;
+                int nPair = Convert.ToInt32(GetCellValue(row.Cells[col_weekdays + 1]));
                 if (nPair > 0)
                 {
                     //разбор дисциплины
@@ -209,12 +202,12 @@ namespace ParserXLS
                     {
                         continue;
                     }
-                    string dis = row.Cells[col_group].StringCellValue.Trim();
+                    string dis = (Convert.ToString(GetCellValue(row.Cells[col_group]))).Trim();
                     if (col_group >= sheet.GetRow(i + 1).Cells.Count)
                     {
                         continue;
                     }
-                    string strAuditoria = sheet.GetRow(i + 1).Cells[col_group].StringCellValue;
+                    string strAuditoria = Convert.ToString(GetCellValue(sheet.GetRow(i + 1).Cells[col_group]));
                     if (!string.IsNullOrEmpty(strAuditoria))//проверка на НЕ пустую ячейку(2)
                     {
                         string typeLesson = "";
@@ -224,7 +217,7 @@ namespace ParserXLS
                         {
                             continue;
                         }
-                        string FIO = sheet.GetRow(i + 2).Cells[col_group].StringCellValue;
+                        string FIO = Convert.ToString(GetCellValue(sheet.GetRow(i + 2).Cells[col_group]));
                         typeLesson = GetTypeLesson(strAuditoria);
                         aud = GetAuditorie(strAuditoria);
                         if (strAuditoria.Contains("Спортзал"))
@@ -447,6 +440,47 @@ namespace ParserXLS
             {
                 return Href + "\n\t";
             }
+        }
+
+        public static object GetCellValue(ICell cell)
+        {
+            if (cell == null)
+            {
+                return string.Empty;// Устанавливаем нулевое значение "";
+            }
+            switch (cell.CellType)
+            {
+                default:
+                    return null;
+                case CellType.Blank:
+                    return null;
+                case CellType.Boolean:
+                    return cell.BooleanCellValue;
+                case CellType.String:
+                    return cell.StringCellValue;
+                case CellType.Numeric:
+                    if (DateUtil.IsCellDateFormatted(cell))
+                        return cell.DateCellValue;
+                    else
+                        return cell.NumericCellValue;
+                case CellType.Error:
+                    return cell.ErrorCellValue;
+                case CellType.Formula:
+                    return string.Concat("=", cell.CellFormula);
+            }
+        }
+
+        public static int day_week(HSSFSheet sheet)
+        {
+            //определить столбцы с днями недели и парами по 11 строке
+            IRow row = sheet.GetRow(10);
+            int col_weekdays = row.Cells.FindIndex(x => x.ToString() == "ДЕНЬ НЕДЕЛИ");
+            if (col_weekdays == -1)
+            {
+                Console.WriteLine("Столбец с днями недели не найден");
+               
+            }
+            return col_weekdays;
         }
     }
 }
